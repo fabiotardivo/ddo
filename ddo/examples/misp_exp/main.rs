@@ -398,6 +398,7 @@ fn main() {
     }
         
     println!("Duration:   {:.3} seconds", duration.as_secs_f32());
+    println!("#Nodes   :  {} ",           solver.explored());
     println!("Objective:  {}",            best_value.unwrap_or(-1));
     println!("Upper Bnd:  {}",            upper_bound);
     println!("Lower Bnd:  {}",            lower_bound);
