@@ -43,7 +43,7 @@ mod tests;
 
 pub const KNOWN_OPTIMAL_COSTS: [usize; 29] = [
     0, 0, 1, 3, 6, 11, 17, 25, 34, 44, 55, 72, 85, 106, 127, 151, 177, 199, 216, 246, 283, 333,
-    356, 372, 425, 480, 492, 553, 585,
+356, 372, 425, 480, 492, 553, 585,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -209,40 +209,18 @@ struct Args {
     size: usize,
     /// The maximum amount of time you would like this solver to run
     #[clap(short, long, default_value = "100")]
-    timeout: u64,
+    duration: u64,
     /// The maximum width of a layer when solving an instance. By default, it will allow
     /// as many nodes in a layer as there are unassigned variables in the global problem.
     #[clap(short, long)]
     width: Option<usize>,
+    /// The number of concurrent threads
+    #[clap(short, long, default_value = "1")]
+    threads: usize,
 }
 
-/// This is your executable's entry point. It is the place where all the pieces are put together
-/// to create a fast an effective solver for the Golomb problem.
-fn main() {
-    let args = Args::parse();
-    let problem = Golomb::new(args.size);
-    let relaxation = GolombRelax{pb: &problem};
-    let heuristic = GolombRanking;
-    let width =
-        if args.width.is_some() {
-            Box::new(FixedWidth(args.width.unwrap()))
-        } else {
-            Box::new(FixedWidth(10))
-        };
-    let dominance = EmptyDominanceChecker::default();
-    let cutoff = NoCutoff;
-    let mut fringe = NoDupFringe::new(MaxUB::new(&heuristic));
-
-    let mut solver = SeqCachingSolverFc::new(
-        &problem,
-        &relaxation,
-        &heuristic,
-        width.as_ref(),
-        &dominance,
-        &cutoff,
-        &mut fringe,
-    );
-
+/// Auxiliary function to print the solver results.
+fn run<S: Solver>(solver: &mut S) {
     let start = Instant::now();
     let Completion{ is_exact, best_value } = solver.maximize();
 
@@ -263,4 +241,36 @@ fn main() {
     println!("Gap:        {:.3}",         gap);
     println!("Aborted:    {}",            !is_exact);
     println!("Solution:   {:?}",          best_solution.unwrap_or_default());
+}
+
+/// This is your executable's entry point. It is the place where all the pieces are put together
+/// to create a fast an effective solver for the Golomb problem.
+fn main() {
+    let args = Args::parse();
+    let problem = Golomb::new(args.size);
+    let relaxation = GolombRelax{pb: &problem};
+    let heuristic = GolombRanking;
+    let width =
+    if args.width.is_some() {
+        Box::new(FixedWidth(args.width.unwrap()))
+    } else {
+        Box::new(FixedWidth(10))
+    };
+    let dominance = EmptyDominanceChecker::default();
+    let cutoff = TimeBudget::new(Duration::from_secs(args.duration));
+    let mut fringe = NoDupFringe::new(MaxUB::new(&heuristic));
+
+    if args.threads == 1 {
+        let mut solver = SeqCachingSolverFc::new(
+            &problem, &relaxation, &heuristic,
+            width.as_ref(), &dominance, &cutoff, &mut fringe,
+        );
+        run(&mut solver);
+    } else {
+        let mut solver = ParNoCachingSolverLel::custom(
+            &problem, &relaxation, &heuristic,
+            width.as_ref(), &dominance, &cutoff, &mut fringe, args.threads,
+        );
+        run(&mut solver);
+    }
 }
